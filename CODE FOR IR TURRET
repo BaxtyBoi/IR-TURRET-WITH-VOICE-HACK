@@ -1,0 +1,187 @@
+#include <Arduino.h>
+#include <Servo.h>
+#include <IRremote.hpp>
+#include "DFRobot_DF2301Q.h"
+
+//////////////////////////////////////////////////
+// IR COMMANDS
+//////////////////////////////////////////////////
+
+#define left 0x8
+#define right 0x5A
+#define up 0x18
+#define down 0x52
+#define ok 0x1C
+#define star 0x16
+
+#define DECODE_NEC
+
+//////////////////////////////////////////////////
+// OBJECTS
+//////////////////////////////////////////////////
+
+Servo yawServo;
+Servo pitchServo;
+Servo rollServo;
+
+DFRobot_DF2301Q_I2C voice;
+
+//////////////////////////////////////////////////
+// VARIABLES
+//////////////////////////////////////////////////
+
+int yawServoVal = 90;
+int pitchServoVal = 100;
+
+int pitchMoveSpeed = 8;
+int yawMoveSpeed = 90;
+int yawStopSpeed = 90;
+
+int rollMoveSpeed = 90;
+int rollStopSpeed = 90;
+
+int pitchMax = 150;
+int pitchMin = 33;
+
+// 🎤 VOICE COMMAND ID (CHANGE IF NEEDED)
+const int FIRE_TURRET_CMD = 5;
+
+//////////////////////////////////////////////////
+// SETUP
+//////////////////////////////////////////////////
+
+void setup() {
+    Serial.begin(115200);
+
+    yawServo.attach(10);
+    pitchServo.attach(11);
+    rollServo.attach(12);
+
+    IrReceiver.begin(9, ENABLE_LED_FEEDBACK);
+
+    homeServos();
+
+    // 🔥 Voice sensor init
+    while (!voice.begin()) {
+        Serial.println("Waiting for DF2301Q...");
+        delay(1000);
+    }
+
+    Serial.println("Voice Ready!");
+}
+
+//////////////////////////////////////////////////
+// LOOP
+//////////////////////////////////////////////////
+
+void loop() {
+
+    // ================= IR CONTROL =================
+    if (IrReceiver.decode()) {
+        IrReceiver.resume();
+
+        switch (IrReceiver.decodedIRData.command) {
+
+            case up: upMove(1); break;
+            case down: downMove(1); break;
+            case left: leftMove(1); break;
+            case right: rightMove(1); break;
+
+            case ok:
+                fire();
+                break;
+
+            case star:
+                fireAll();
+                break;
+        }
+    }
+
+    // ================= VOICE CONTROL =================
+    uint8_t cmd = voice.getCMDID();
+
+    if (cmd != 0) {
+        Serial.print("VOICE CMD: ");
+        Serial.println(cmd);
+
+        // 🎤 "fire turret"
+        if (cmd == FIRE_TURRET_CMD) {
+            Serial.println("VOICE FIRE TURRET!");
+            fire();
+        }
+    }
+
+    delay(10);
+}
+
+//////////////////////////////////////////////////
+// MOVEMENT FUNCTIONS
+//////////////////////////////////////////////////
+
+void leftMove(int moves){
+    for(int i=0;i<moves;i++){
+        yawServo.write(yawStopSpeed + yawMoveSpeed);
+        delay(150);
+        yawServo.write(yawStopSpeed);
+    }
+}
+
+void rightMove(int moves){
+    for(int i=0;i<moves;i++){
+        yawServo.write(yawStopSpeed - yawMoveSpeed);
+        delay(150);
+        yawServo.write(yawStopSpeed);
+    }
+}
+
+void upMove(int moves){
+    if(pitchServoVal + pitchMoveSpeed < pitchMax){
+        pitchServoVal += pitchMoveSpeed;
+        pitchServo.write(pitchServoVal);
+    }
+}
+
+void downMove(int moves){
+    if(pitchServoVal - pitchMoveSpeed > pitchMin){
+        pitchServoVal -= pitchMoveSpeed;
+        pitchServo.write(pitchServoVal);
+    }
+}
+
+//////////////////////////////////////////////////
+// 🔥 IMPROVED FIRE FUNCTION
+//////////////////////////////////////////////////
+
+void fire() {
+
+    Serial.println("FIRING TURRET");
+
+    // stronger + more reliable spin
+    rollServo.write(rollStopSpeed + rollMoveSpeed);
+    delay(300);   // 🔥 stronger feed
+    rollServo.write(rollStopSpeed);
+    delay(60);
+
+    // pulse boost
+    rollServo.write(rollStopSpeed + rollMoveSpeed);
+    delay(120);
+    rollServo.write(rollStopSpeed);
+
+    Serial.println("FIRE DONE");
+}
+
+void fireAll() {
+    rollServo.write(rollStopSpeed + rollMoveSpeed);
+    delay(158 * 6);
+    rollServo.write(rollStopSpeed);
+}
+
+//////////////////////////////////////////////////
+// HOME POSITION
+//////////////////////////////////////////////////
+
+void homeServos(){
+    yawServo.write(yawStopSpeed);
+    rollServo.write(rollStopSpeed);
+    pitchServo.write(100);
+}
